@@ -2,20 +2,27 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/env"
 	"log"
+	"net/http"
 	"time"
 )
+
+const DUMMY_DATA_URL = "https://petstore.swagger.io/v2/swagger.json"
 
 func main() {
 	client, err := getK8sClient()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	hClient := http.DefaultClient
 
 	for {
 		svcs, err := client.CoreV1().Services("selfservice").List(context.TODO(), metav1.ListOptions{})
@@ -25,7 +32,40 @@ func main() {
 
 		for _, svc := range svcs.Items {
 			fmt.Println(svc.Name)
-			fmt.Println(svc.Spec)
+			// Pretend this service has an openapi spec
+			req, err := http.NewRequest("GET", DUMMY_DATA_URL, nil)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			resp, err := hClient.Do(req)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			defer resp.Body.Close()
+
+			rawData, err := io.ReadAll(resp.Body)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			// TODO: Discuss encoding of OpenAPI manifest
+			//b64EncodedSpec := base64.StdEncoding.EncodeToString(rawData)
+
+			// TODO: GZIP OpenAPI response
+			payload := ServiceResponse{
+				Name:        svc.Name,
+				Namespace:   svc.Namespace,
+				OpenApiSpec: string(rawData),
+			}
+
+			serialisedPayload, err := json.Marshal(payload)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			fmt.Println(string(serialisedPayload))
 		}
 
 		fmt.Println("zzzz")
@@ -45,4 +85,10 @@ func getK8sClient() (*kubernetes.Clientset, error) {
 	}
 
 	return client, nil
+}
+
+type ServiceResponse struct {
+	Name        string `json:"name"`
+	Namespace   string `json:"namespace"`
+	OpenApiSpec string `json:"openApiSpec"`
 }
