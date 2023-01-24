@@ -36,7 +36,7 @@ func main() {
 
 			for _, port := range svc.Spec.Ports {
 				if port.Protocol == v1.ProtocolTCP {
-					req, err := http.NewRequest("GET", fmt.Sprintf("http://%s:%d", svc.Spec.ClusterIP, port.Port), nil)
+					req, err := http.NewRequest("GET", fmt.Sprintf("http://%s:%d/swagger/v1/swagger.json", svc.Spec.ClusterIP, port.Port), nil)
 					if err != nil {
 						log.Println(err)
 						continue
@@ -44,14 +44,18 @@ func main() {
 
 					resp, err := hClient.Do(req)
 					if err != nil {
-						log.Printf("Unreachable service at %s, skipping\n", fmt.Sprintf("http://%s:%d", svc.Spec.ClusterIP, port.Port))
+						log.Printf("Unreachable service at %s, skipping\n", fmt.Sprintf("%s:%d", svc.Spec.ClusterIP, port.Port))
 						continue
 					}
 
-					fmt.Println("Status code: ", resp.StatusCode)
-					fmt.Println("Headers:")
-					for k, v := range resp.Header {
-						fmt.Printf("  %s: %v\n", k, v)
+					if resp.StatusCode == 200 {
+						rawData, err := io.ReadAll(resp.Body)
+						if err != nil {
+							log.Fatal(err)
+						}
+						defer resp.Body.Close()
+
+						fmt.Println(string(rawData))
 					}
 
 				}
