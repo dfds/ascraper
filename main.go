@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
+	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl/plain"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -18,7 +22,83 @@ import (
 
 const DUMMY_DATA_URL = "https://petstore.swagger.io/v2/swagger.json"
 
+func NewDialer(authConfig AuthConfig) *kafka.Dialer {
+	// Configure TLS
+	tlsConfig := &tls.Config{
+		MinVersion:               tls.VersionTLS12,
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		},
+	}
+
+	// Configure SASL
+	saslMechanism := plain.Mechanism{
+		Username: authConfig.Username,
+		Password: authConfig.Password,
+	}
+
+	// Configure connection dialer
+	return &kafka.Dialer{
+		Timeout:       10 * time.Second,
+		DualStack:     true,
+		TLS:           tlsConfig,
+		SASLMechanism: saslMechanism,
+	}
+}
+
+// ConsumerConfig allows one to configure a Kafka consumer using
+// environment variables.
+type ConsumerConfig struct {
+	GroupID string `envconfig:"group_id",required:"true"`
+	Topic   string `required:"true"`
+}
+
+// ProducerConfig allows one to configure a Kafka producer using
+// environment variables.
+type ProducerConfig struct {
+	Topic string `required:"true"`
+}
+
+// AuthConfig allows one to configure auth with a plain SASL
+// authnetication mechanism to the Kafka brokers.
+type AuthConfig struct {
+	Brokers  []string `required:"true"`
+	Username string   `required:"true"`
+	Password string   `required:"true"`
+}
+
+func NewProducer(config ProducerConfig, authConfig AuthConfig, dialer *kafka.Dialer) *kafka.Writer {
+	return kafka.NewWriter(kafka.WriterConfig{
+		Brokers:  authConfig.Brokers,
+		Topic:    config.Topic,
+		Balancer: &kafka.Hash{},
+		Async:    false,
+		Dialer:   dialer,
+		// Not utilizing the internal retry logic of this client, since we want to keep trying
+		// indefinitely on these type of errors.
+		MaxAttempts:  1,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	})
+}
+
 func main() {
+	// Initiate producers
+	uname := os.Getenv("KAFKA_USERNAME")
+	passwd := os.Getenv("KAFKA_PASSWORD")
+	pconf := ProducerConfig{Topic: "***REMOVED***"}
+	authconf := AuthConfig{Brokers: []string{"***REMOVED***"}, Username: uname, Password: passwd}
+	dialer := NewDialer(authconf)
+	producer := NewProducer(pconf, authconf, dialer)
+	ctx := context.Background()
+
+	defer producer.Close()
+
 	client, err := getK8sClient()
 	if err != nil {
 		log.Fatal(err)
@@ -56,7 +136,30 @@ func main() {
 						}
 						defer resp.Body.Close()
 
-						fmt.Println(string(rawData))
+						payload := ServiceResponse{
+							Name:        svc.Name,
+							Namespace:   svc.Namespace,
+							OpenApiSpec: string(rawData),
+						}
+
+						kMsg := Envelope[interface{}]{
+							MessageId: "E3DBBBA7-E3FB-42F8-8DE2-3E3AC5E6167E",
+							Type:      "placeholder",
+							Data:      payload,
+						}
+
+						serialisedPayload, err := json.Marshal(kMsg)
+						if err != nil {
+							log.Fatal(err)
+						}
+
+						testMsgKey := "weeeeee" //fine for now
+						fmt.Printf("username: %v, password: %v\n", uname, passwd)
+						err = producer.WriteMessages(ctx, kafka.Message{Key: []byte(testMsgKey), Value: serialisedPayload})
+						if err != nil {
+							fmt.Print(err)
+							os.Exit(1)
+						}
 					}
 
 				}
