@@ -60,12 +60,18 @@ func main() {
 				OpenApiSpec: string(rawData),
 			}
 
-			serialisedPayload, err := json.Marshal(payload)
+			kMsg := Envelope[interface{}]{
+				MessageId: "E3DBBBA7-E3FB-42F8-8DE2-3E3AC5E6167E",
+				Type:      "placeholder",
+				Data:      payload,
+			}
+
+			serialisedPayload, err := json.Marshal(kMsg)
 			if err != nil {
 				log.Fatal(err)
 			}
-
 			fmt.Println(string(serialisedPayload))
+
 		}
 
 		fmt.Println("zzzz")
@@ -91,4 +97,12 @@ type ServiceResponse struct {
 	Name        string `json:"name"`
 	Namespace   string `json:"namespace"`
 	OpenApiSpec string `json:"openApiSpec"`
+}
+
+// Envelope
+// Kafka message envelope/wrapper
+type Envelope[D any] struct {
+	MessageId string `json:"messageId"`
+	Type      string `json:"type"`
+	Data      D      `json:"data"`
 }
