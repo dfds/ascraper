@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -32,6 +33,32 @@ func main() {
 
 		for _, svc := range svcs.Items {
 			fmt.Println(svc.Name)
+
+			for _, port := range svc.Spec.Ports {
+				if port.Protocol == v1.ProtocolTCP {
+					req, err := http.NewRequest("GET", fmt.Sprintf("http://%s:%d", svc.Spec.ClusterIP, port.Port), nil)
+					if err != nil {
+						log.Println(err)
+						continue
+					}
+
+					resp, err := hClient.Do(req)
+					if err != nil {
+						log.Printf("Unreachable service at %s, skipping\n", fmt.Sprintf("http://%s:%d", svc.Spec.ClusterIP, port.Port))
+						continue
+					}
+
+					fmt.Println("Status code: ", resp.StatusCode)
+					fmt.Println("Headers:")
+					for k, v := range resp.Header {
+						fmt.Printf("  %s: %v\n", k, v)
+					}
+
+				}
+			}
+
+			continue
+
 			// Pretend this service has an openapi spec
 			req, err := http.NewRequest("GET", DUMMY_DATA_URL, nil)
 			if err != nil {
