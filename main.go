@@ -11,6 +11,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl/plain"
 	v1 "k8s.io/api/core/v1"
@@ -19,6 +21,23 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/env"
 )
+
+var (
+	SucceededScanReq = prometheus.NewGauge(prometheus.GaugeOpts{
+		Help: "Successful request to a service port",
+		Name: "ascraper_secceeded_scan_req",
+	}, )
+
+	FailedScanReq = prometheus.NewGauge(prometheus.GaugeOpts{
+		Help: "Failed request to a service port",
+		Name: "ascraper_failed_scan_req",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(SucceededScanReq)
+	prometheus.MustRegister(FailedScanReq)
+}
 
 const DUMMY_DATA_URL = "https://petstore.swagger.io/v2/swagger.json"
 
@@ -88,6 +107,12 @@ func NewProducer(config ProducerConfig, authConfig AuthConfig, dialer *kafka.Dia
 }
 
 func main() {
+
+	go func(){
+		http.Handle("/metrics", promhttp.Handler())
+        http.ListenAndServe(":8081", nil)
+
+	} ()
 	// Initiate producers
 	uname := os.Getenv("KAFKA_USERNAME")
 	passwd := os.Getenv("KAFKA_PASSWORD")
@@ -125,6 +150,7 @@ func main() {
 
 					resp, err := hClient.Do(req)
 					if err != nil {
+						FailedScanReq.Inc()
 						log.Printf("Unreachable service at %s, skipping\n", fmt.Sprintf("%s:%d", svc.Spec.ClusterIP, port.Port))
 						continue
 					}
@@ -134,6 +160,7 @@ func main() {
 						if err != nil {
 							log.Fatal(err)
 						}
+						SucceededScanReq.Inc()
 						defer resp.Body.Close()
 
 						payload := ServiceResponse{
@@ -165,49 +192,9 @@ func main() {
 				}
 			}
 
-			continue
-
-			// Pretend this service has an openapi spec
-			req, err := http.NewRequest("GET", DUMMY_DATA_URL, nil)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			resp, err := hClient.Do(req)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			defer resp.Body.Close()
-
-			rawData, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			// TODO: Discuss encoding of OpenAPI manifest
-			//b64EncodedSpec := base64.StdEncoding.EncodeToString(rawData)
-
-			// TODO: GZIP OpenAPI response
-			payload := ServiceResponse{
-				Name:        svc.Name,
-				Namespace:   svc.Namespace,
-				OpenApiSpec: string(rawData),
-			}
-
-			kMsg := Envelope[interface{}]{
-				MessageId: "E3DBBBA7-E3FB-42F8-8DE2-3E3AC5E6167E",
-				Type:      "placeholder",
-				Data:      payload,
-			}
-
-			serialisedPayload, err := json.Marshal(kMsg)
-			if err != nil {
-				log.Fatal(err)
-			}
-			fmt.Println(string(serialisedPayload))
-
 		}
+
+
 
 		fmt.Println("zzzz")
 		time.Sleep(time.Second * 60)
