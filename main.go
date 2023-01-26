@@ -113,6 +113,7 @@ func handlerSpecs(w http.ResponseWriter, r *http.Request) {
 		log.Fatal(err)
 	}
 
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	w.Write(serialised)
 }
 
