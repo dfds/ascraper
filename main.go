@@ -107,14 +107,28 @@ func NewProducer(config ProducerConfig, authConfig AuthConfig, dialer *kafka.Dia
 	})
 }
 
+func handlerSpecs(w http.ResponseWriter, r *http.Request) {
+	serialised, err := json.Marshal(openApiSpecs)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	w.Write(serialised)
+}
+
+var openApiSpecs map[string][]byte
+
 func main() {
 	conf, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	openApiSpecs = make(map[string][]byte)
+
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
+		http.HandleFunc("/specs", handlerSpecs)
 		http.ListenAndServe(":8081", nil)
 	}()
 	// Initiate producers
@@ -138,6 +152,8 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		newData := make(map[string][]byte)
 
 		for _, svc := range svcs.Items {
 			fmt.Println(svc.Name)
@@ -164,6 +180,8 @@ func main() {
 						}
 						SucceededScanReq.Inc()
 						defer resp.Body.Close()
+
+						newData[fmt.Sprintf("%s|%s|%d", svc.Namespace, svc.Name, port.Port)] = rawData
 
 						payload := ServiceResponse{
 							Name:        svc.Name,
@@ -195,6 +213,7 @@ func main() {
 
 		}
 
+		openApiSpecs = newData
 		fmt.Println("zzzz")
 		time.Sleep(time.Second * 60)
 	}
