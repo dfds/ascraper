@@ -1,0 +1,29 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ascraper
+  namespace: selfservice
+spec:
+  routes:
+    - kind: Rule
+      match: Host(`api.hellman.oxygen.dfds.cloud`) && PathPrefix(`/ce/ascraper`)
+      priority: 10
+      middlewares:
+        - name: ascraper
+          namespace: selfservice
+      services:
+        - kind: Service
+          name: ascraper
+          namespace: selfservice
+          port: 8081
+
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: ascraper
+  namespace: selfservice
+spec:
+  stripPrefix:
+    prefixes:
+    - /ce/ascraper
