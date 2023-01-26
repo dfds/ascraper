@@ -20,6 +20,24 @@ spec:
       containers:
         - name: app
           image: 579478677147.dkr.ecr.eu-central-1.amazonaws.com/selfservice/ascraper:{{BUILD_NUMBER}}
+          env:
+            - name: ASCRAPER_KAFKA_BROKER
+              valueFrom:
+                secretKeyRef:
+                  key: kafkaBroker
+                  name: ascraper
+            - name: ASCRAPER_KAFKA_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  key: kafkaUsername
+                  name: ascraper
+            - name: ASCRAPER_KAFKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: kafkaPassword
+                  name: ascraper
+            - name: ASCRAPER_KAFKA_TOPIC
+              value: cloudengineering.selfservice.apispecs
           ports:
             - name: metrics
               containerPort: 8888
