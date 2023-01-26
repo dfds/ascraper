@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"go.dfds.cloud/scraper/internal/config"
 	"io"
 	"log"
 	"net/http"
@@ -26,7 +27,7 @@ var (
 	SucceededScanReq = prometheus.NewGauge(prometheus.GaugeOpts{
 		Help: "Successful request to a service port",
 		Name: "ascraper_secceeded_scan_req",
-	}, )
+	})
 
 	FailedScanReq = prometheus.NewGauge(prometheus.GaugeOpts{
 		Help: "Failed request to a service port",
@@ -107,17 +108,18 @@ func NewProducer(config ProducerConfig, authConfig AuthConfig, dialer *kafka.Dia
 }
 
 func main() {
+	conf, err := config.LoadConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	go func(){
+	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-        http.ListenAndServe(":8081", nil)
-
-	} ()
+		http.ListenAndServe(":8081", nil)
+	}()
 	// Initiate producers
-	uname := os.Getenv("KAFKA_USERNAME")
-	passwd := os.Getenv("KAFKA_PASSWORD")
-	pconf := ProducerConfig{Topic: "***REMOVED***"}
-	authconf := AuthConfig{Brokers: []string{"***REMOVED***"}, Username: uname, Password: passwd}
+	pconf := ProducerConfig{Topic: conf.Kafka.Topic}
+	authconf := AuthConfig{Brokers: []string{conf.Kafka.Broker}, Username: conf.Kafka.Username, Password: conf.Kafka.Password}
 	dialer := NewDialer(authconf)
 	producer := NewProducer(pconf, authconf, dialer)
 	ctx := context.Background()
@@ -181,7 +183,6 @@ func main() {
 						}
 
 						testMsgKey := "weeeeee" //fine for now
-						fmt.Printf("username: %v, password: %v\n", uname, passwd)
 						err = producer.WriteMessages(ctx, kafka.Message{Key: []byte(testMsgKey), Value: serialisedPayload})
 						if err != nil {
 							fmt.Print(err)
@@ -193,8 +194,6 @@ func main() {
 			}
 
 		}
-
-
 
 		fmt.Println("zzzz")
 		time.Sleep(time.Second * 60)
